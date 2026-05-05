@@ -1,36 +1,87 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Resume Tailor
 
-## Getting Started
+A local web app that tailors your resume to job postings using the Anthropic API. Paste a job URL or description, review AI-suggested changes one at a time, and copy the final Markdown resume.
 
-First, run the development server:
+## Setup
+
+**1. Clone or copy this directory, then install dependencies:**
+
+```bash
+npm install
+```
+
+**2. Add your Anthropic API key:**
+
+```bash
+cp .env.example .env.local
+# Edit .env.local and set ANTHROPIC_API_KEY=sk-ant-...
+```
+
+**3. Start the dev server:**
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) (or the port shown in your terminal if 3000 is in use).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Usage
 
-## Learn More
+### First time
 
-To learn more about Next.js, take a look at the following resources:
+1. Go to **Base Resume** in the nav
+2. Paste your full resume in Markdown format
+3. Click **Save**
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Tailoring a resume
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Go to **New Tailoring**
+2. Paste a job posting URL and click **Fetch** — or paste the job description directly
+3. Click **Tailor my resume** and wait ~15 seconds
+4. Review each suggested change:
+   - **Reframes** (blue) — rewrites of existing bullets using job language. Accepted by default.
+   - **Suggested additions** (amber) — new bullets you might add *if* you have that experience. Rejected by default.
+5. Click **Show final resume** to see the assembled Markdown
+6. **Copy markdown** to paste into your document tool, or **Save this version** to save it locally
 
-## Deploy on Vercel
+### Viewing saved tailorings
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The home page lists all saved tailorings. Click any row to view the final resume, or click **Delete** to remove it.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+## Scraping notes
+
+The scraper works best with:
+- **Greenhouse** (`boards.greenhouse.io`)
+- **Lever** (`jobs.lever.co`)
+- **Ashby** (`jobs.ashbyhq.com`)
+- **Workable** (`apply.workable.com`)
+- **Stripe** (`stripe.com/jobs`)
+
+**LinkedIn, Workday, and Indeed** block automated scraping — paste the job description manually for these.
+
+If scraping fails for any other site, paste the job description text directly into the textarea.
+
+---
+
+## Data storage
+
+All data is stored locally in `./data/` (gitignored):
+
+- `data/base-resume.md` — your base resume
+- `data/tailorings/*.json` — one file per saved tailoring
+
+No database, no cloud storage, no accounts.
+
+---
+
+## Stack
+
+- Next.js 16 (App Router) + TypeScript
+- Tailwind CSS
+- Anthropic SDK (`claude-sonnet-4-6`)
+- cheerio (job scraping)
+- zod (AI response validation)
