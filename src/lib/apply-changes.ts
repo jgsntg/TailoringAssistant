@@ -53,3 +53,28 @@ export function applyChanges(baseResume: string, accepted: AcceptedChange[]): st
 
   return resume;
 }
+
+export function applyAllChanges(
+  baseResume: string,
+  response: import('@/lib/types').TailoringResponse
+): string {
+  const accepted: AcceptedChange[] = [];
+
+  if (response.summary_revision) {
+    accepted.push({
+      type: 'summary',
+      original: response.summary_revision.original,
+      revised: response.summary_revision.revised,
+    });
+  }
+
+  for (const b of response.bullet_revisions) {
+    accepted.push({ type: 'bullet', section: b.section, original: b.original, revised: b.revised });
+  }
+
+  for (const a of response.suggested_additions) {
+    accepted.push({ type: 'addition', section: a.section, suggested_bullet: a.suggested_bullet });
+  }
+
+  return applyChanges(baseResume, accepted);
+}

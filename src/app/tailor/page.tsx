@@ -2,12 +2,16 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import type { TailoringResponse } from '@/lib/types';
+import type { TailoringResponse, ComparisonResult } from '@/lib/types';
 import { applyChanges, type AcceptedChange } from '@/lib/apply-changes';
 import TailoringReview from '@/components/TailoringReview';
 import FinalResumeView from '@/components/FinalResumeView';
+import ModelSelector from '@/components/ModelSelector';
+import ComparisonView from '@/components/ComparisonView';
 
-type Phase = 'input' | 'loading' | 'review' | 'final';
+type Phase = 'input' | 'loading' | 'review' | 'final' | 'comparison';
+
+type ModelInfo = { id: string; displayName: string; vendor: 'anthropic' | 'openai' };
 
 function buildFinalResume(
   baseResume: string,
@@ -23,13 +27,11 @@ function buildFinalResume(
       revised: response.summary_revision.revised,
     });
   }
-
   response.bullet_revisions.forEach((br, i) => {
     if (acceptedIds.includes(`bullet-${i}`)) {
       changes.push({ type: 'bullet', section: br.section, original: br.original, revised: br.revised });
     }
   });
-
   response.suggested_additions.forEach((sa, i) => {
     if (acceptedIds.includes(`addition-${i}`)) {
       changes.push({ type: 'addition', section: sa.section, suggested_bullet: sa.suggested_bullet });
@@ -45,6 +47,17 @@ export default function TailorPage() {
   // Base resume
   const [baseResume, setBaseResume] = useState('');
   const [baseResumeLoaded, setBaseResumeLoaded] = useState(false);
+
+  // Model selection
+  const [selectedModel, setSelectedModel] = useState('');
+  const [usedModelName, setUsedModelName] = useState('');
+  const [cameFromComparison, setCameFromComparison] = useState(false);
+
+  // Comparison mode
+  const [compareMode, setCompareMode] = useState(false);
+  const [modelB, setModelB] = useState('');
+  const [allModels, setAllModels] = useState<ModelInfo[]>([]);
+  const [comparisonResults, setComparisonResults] = useState<ComparisonResult[]>([]);
 
   // Input phase
   const [jobUrl, setJobUrl] = useState('');
@@ -71,7 +84,29 @@ export default function TailorPage() {
         setBaseResume(data.content);
         setBaseResumeLoaded(true);
       });
+    // Fetch models for compare defaults
+    fetch('/api/models')
+      .then((r) => r.json())
+      .then((data: { models: ModelInfo[] }) => {
+        setAllModels(data.models);
+      });
   }, []);
+
+  function handleToggleCompare(on: boolean) {
+    setCompareMode(on);
+    if (on && allModels.length > 0) {
+      // Default B to first cross-vendor model
+      const firstOpenAI = allModels.find((m) => m.vendor === 'openai');
+      const firstAnthropic = allModels.find((m) => m.vendor === 'anthropic');
+      if (firstOpenAI && selectedModel !== firstOpenAI.id) {
+        setModelB(firstOpenAI.id);
+      } else if (firstAnthropic && selectedModel !== firstAnthropic.id) {
+        setModelB(firstAnthropic.id);
+      } else {
+        setModelB(allModels[0].id);
+      }
+    }
+  }
 
   async function handleScrape() {
     setScrapeError('');
@@ -110,7 +145,7 @@ export default function TailorPage() {
         fetch('/api/tailor', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ resumeMd: baseResume, jobText }),
+          body: JSON.stringify({ resumeMd: baseResume, jobText, model: selectedModel }),
         }),
         timeout,
       ]);
@@ -121,12 +156,55 @@ export default function TailorPage() {
         setPhase('input');
       } else {
         setTailoringResponse(data as TailoringResponse);
+        setUsedModelName(data._modelName ?? '');
+        setCameFromComparison(false);
         setPhase('review');
       }
     } catch (err) {
       setTailorError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
       setPhase('input');
     }
+  }
+
+  async function handleCompare() {
+    setTailorError('');
+    setPhase('loading');
+
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Comparison timed out after 90 seconds. Please try again.')), 90000)
+    );
+
+    try {
+      const res = await Promise.race([
+        fetch('/api/compare', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resumeMd: baseResume, jobText, modelA: selectedModel, modelB }),
+        }),
+        timeout,
+      ]);
+
+      const data = await res.json();
+      if (data.error) {
+        setTailorError(data.message);
+        setPhase('input');
+      } else {
+        setComparisonResults(data.results);
+        setPhase('comparison');
+      }
+    } catch (err) {
+      setTailorError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+      setPhase('input');
+    }
+  }
+
+  function handleUseVersion(result: ComparisonResult) {
+    if (!result.tailoringResponse) return;
+    setTailoringResponse(result.tailoringResponse);
+    setUsedModelName(result.modelDisplayName);
+    setCameFromComparison(true);
+    setSavedId(null);
+    setPhase('review');
   }
 
   function handleShowFinal() {
@@ -147,23 +225,23 @@ export default function TailorPage() {
     setSaveError('');
     const final = finalResume || buildFinalResume(baseResume, tailoringResponse, acceptedIds);
     try {
-    const res = await fetch('/api/tailorings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        job_title: jobTitle || 'Untitled role',
-        company: company || 'Unknown company',
-        job_url: jobUrl || undefined,
-        job_text: jobText,
-        base_resume_snapshot: baseResume,
-        tailored_resume: final,
-        tailoring_response: tailoringResponse,
-        accepted_change_ids: acceptedIds,
-      }),
-    });
-    const data = await res.json();
-    if (data.id) setSavedId(data.id);
-    else throw new Error('Save failed');
+      const res = await fetch('/api/tailorings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          job_title: jobTitle || 'Untitled role',
+          company: company || 'Unknown company',
+          job_url: jobUrl || undefined,
+          job_text: jobText,
+          base_resume_snapshot: baseResume,
+          tailored_resume: final,
+          tailoring_response: tailoringResponse,
+          accepted_change_ids: acceptedIds,
+        }),
+      });
+      const data = await res.json();
+      if (data.id) setSavedId(data.id);
+      else throw new Error('Save failed');
     } catch {
       setSaveError('Failed to save. Please try again.');
     }
@@ -173,14 +251,37 @@ export default function TailorPage() {
     setAcceptedIds(ids);
   }, []);
 
+  function resetToInput() {
+    setPhase('input');
+    setTailoringResponse(null);
+    setComparisonResults([]);
+    setSavedId(null);
+    setCameFromComparison(false);
+  }
+
   // ── Phase: Loading ──────────────────────────────────────────────
   if (phase === 'loading') {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-32">
         <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600" />
-        <p className="text-lg font-medium">Analyzing job and tailoring resume...</p>
-        <p className="text-sm text-gray-500">This usually takes 10–20 seconds</p>
+        <p className="text-lg font-medium">
+          {compareMode ? 'Running both models in parallel...' : 'Analyzing job and tailoring resume...'}
+        </p>
+        <p className="text-sm text-gray-500">
+          {compareMode ? 'This usually takes 15–30 seconds' : 'This usually takes 10–20 seconds'}
+        </p>
       </div>
+    );
+  }
+
+  // ── Phase: Comparison ───────────────────────────────────────────
+  if (phase === 'comparison') {
+    return (
+      <ComparisonView
+        results={comparisonResults}
+        onUseVersion={handleUseVersion}
+        onStartOver={resetToInput}
+      />
     );
   }
 
@@ -189,18 +290,21 @@ export default function TailorPage() {
     return (
       <div className="flex flex-col gap-4 pb-32">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">
-            {jobTitle && company
-              ? `${jobTitle} at ${company}`
-              : 'Tailoring review'}
-          </h1>
+          <div>
+            <h1 className="text-2xl font-bold">
+              {jobTitle && company ? `${jobTitle} at ${company}` : 'Tailoring review'}
+            </h1>
+            {usedModelName && (
+              <p className="mt-0.5 text-sm text-gray-500">
+                {cameFromComparison
+                  ? `Comparing then refining — started with ${usedModelName}`
+                  : `Tailored with ${usedModelName}`}
+              </p>
+            )}
+          </div>
           <button
             onClick={() => {
-              if (confirm('Start over? Your current review will be lost.')) {
-                setPhase('input');
-                setTailoringResponse(null);
-                setSavedId(null);
-              }
+              if (confirm('Start over? Your current review will be lost.')) resetToInput();
             }}
             className="text-sm text-gray-500 hover:text-gray-800 underline"
           >
@@ -244,17 +348,22 @@ export default function TailorPage() {
 
   // ── Phase: Final ────────────────────────────────────────────────
   if (phase === 'final') {
+    const safeCompany = (company || '').replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-');
+    const safeTitle = (jobTitle || 'Resume').replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-');
+    const suggestedFilename = safeCompany ? `${safeCompany}-${safeTitle}-Resume` : safeTitle;
     return (
       <FinalResumeView
         markdown={finalResume}
         onBack={() => setPhase('review')}
         onSave={handleSave}
+        suggestedFilename={suggestedFilename}
       />
     );
   }
 
   // ── Phase: Input ────────────────────────────────────────────────
   const canTailor = baseResume.trim().length > 0 && jobText.trim().length > 0;
+  const canCompare = canTailor && !!selectedModel && !!modelB;
 
   return (
     <div className="flex flex-col gap-6">
@@ -264,11 +373,27 @@ export default function TailorPage() {
       {baseResumeLoaded && !baseResume.trim() && (
         <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
           Set up your base resume first before tailoring.{' '}
-          <Link href="/resume" className="font-medium underline">
-            Add base resume
-          </Link>
+          <Link href="/resume" className="font-medium underline">Add base resume</Link>
         </div>
       )}
+
+      {/* Compare toggle */}
+      <div className="flex flex-col gap-1">
+        <label className="flex items-center gap-2 cursor-pointer w-fit">
+          <input
+            type="checkbox"
+            checked={compareMode}
+            onChange={(e) => handleToggleCompare(e.target.checked)}
+            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <span className="text-sm font-medium text-gray-700">Compare two models</span>
+        </label>
+        {compareMode && (
+          <p className="text-xs text-gray-400 ml-6">
+            Comparison mode runs both models — costs ~2× a single tailoring.
+          </p>
+        )}
+      </div>
 
       {/* Tailor error */}
       {tailorError && (
@@ -297,21 +422,15 @@ export default function TailorPage() {
             {isScraping ? 'Fetching...' : 'Fetch'}
           </button>
         </div>
-        {scrapeError && (
-          <p className="text-sm text-red-600">{scrapeError}</p>
-        )}
+        {scrapeError && <p className="text-sm text-red-600">{scrapeError}</p>}
         {jobTitle && company && (
-          <p className="text-sm text-green-700 font-medium">
-            Fetched: {jobTitle} at {company}
-          </p>
+          <p className="text-sm text-green-700 font-medium">Fetched: {jobTitle} at {company}</p>
         )}
       </div>
 
       {/* Paste fallback */}
       <div className="flex flex-col gap-2">
-        <label className="text-sm font-medium text-gray-700">
-          Or paste the job description
-        </label>
+        <label className="text-sm font-medium text-gray-700">Or paste the job description</label>
         <textarea
           value={jobText}
           onChange={(e) => setJobText(e.target.value)}
@@ -327,9 +446,7 @@ export default function TailorPage() {
             <>
               Using base resume:{' '}
               <span className="font-medium text-gray-700">{baseResume.length.toLocaleString()} characters</span>{' '}
-              <Link href="/resume" className="underline hover:text-gray-800">
-                Edit
-              </Link>
+              <Link href="/resume" className="underline hover:text-gray-800">Edit</Link>
             </>
           ) : null
         ) : (
@@ -337,13 +454,36 @@ export default function TailorPage() {
         )}
       </div>
 
-      <button
-        onClick={handleTailor}
-        disabled={!canTailor}
-        className="self-start px-6 py-2.5 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-      >
-        Tailor my resume
-      </button>
+      {/* Model selectors + action */}
+      {compareMode ? (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-end gap-4">
+            <ModelSelector value={selectedModel} onChange={setSelectedModel} label="Model A" disabled={!canTailor} />
+            <ModelSelector value={modelB} onChange={setModelB} label="Model B" disabled={!canTailor} />
+            <button
+              onClick={handleCompare}
+              disabled={!canCompare}
+              className="px-6 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Compare models
+            </button>
+          </div>
+          <p className="text-xs text-gray-400">
+            Both models will tailor in parallel. You&apos;ll see their full outputs side-by-side.
+          </p>
+        </div>
+      ) : (
+        <div className="flex items-end gap-4">
+          <ModelSelector value={selectedModel} onChange={setSelectedModel} disabled={!canTailor} label="Model" />
+          <button
+            onClick={handleTailor}
+            disabled={!canTailor || !selectedModel}
+            className="px-6 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Tailor my resume
+          </button>
+        </div>
+      )}
     </div>
   );
 }

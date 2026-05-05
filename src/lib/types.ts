@@ -33,3 +33,20 @@ export type SavedTailoring = {
 };
 
 export type TailoringMeta = Pick<SavedTailoring, 'id' | 'job_title' | 'company' | 'created_at'>;
+
+export type ComparisonStats = {
+  totalChanges: number;
+  bullets: number;
+  summary: number;
+  additions: number;
+  keywordGaps: number;
+};
+
+export type ComparisonResult = {
+  modelId: string;
+  modelDisplayName: string;
+  tailoringResponse: TailoringResponse | null;
+  tailoredResume: string | null;
+  stats: ComparisonStats | null;
+  error: string | null;
+};

@@ -13,19 +13,19 @@ export default function Nav() {
   const pathname = usePathname();
 
   return (
-    <nav className="border-b border-gray-200 bg-white">
-      <div className="mx-auto max-w-4xl px-6 flex items-center gap-6 h-14">
-        <span className="font-semibold text-gray-900 mr-2">Resume Tailor</span>
+    <nav className="bg-slate-800 shadow-md">
+      <div className="mx-auto max-w-4xl px-6 flex items-center gap-2 h-14">
+        <span className="font-bold text-white mr-4 tracking-tight">Resume Tailor</span>
         {links.map(({ href, label }) => {
           const active = pathname === href;
           return (
             <Link
               key={href}
               href={href}
-              className={`text-sm font-medium transition-colors ${
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                 active
-                  ? 'text-blue-600 border-b-2 border-blue-600 pb-0.5'
-                  : 'text-gray-500 hover:text-gray-900'
+                  ? 'bg-slate-600 text-white'
+                  : 'text-slate-300 hover:bg-slate-700 hover:text-white'
               }`}
             >
               {label}
