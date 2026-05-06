@@ -38,7 +38,7 @@
 
 ## LLM provider IDs
 
-Format: `{vendor}-{model-nickname}` — `anthropic-sonnet`, `anthropic-opus`, `openai-gpt5`, `openai-gpt5-mini`
+Format: `{vendor}-{model-nickname}` — `anthropic-sonnet`, `anthropic-opus`, `openai-gpt54-mini`, `openai-gpt54`, `openai-gpt55`
 
 These IDs are stable UI identifiers stored in `localStorage` — do not change them once shipped.
 

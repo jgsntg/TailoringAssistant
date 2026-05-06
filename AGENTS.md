@@ -19,7 +19,7 @@ Single-user local web app: paste a job URL → AI suggests resume changes → ac
 | Framework | Next.js 16.2 (App Router) + TypeScript 5 + React 19 |
 | Styling | Tailwind CSS v4 — no `tailwind.config.ts` content array needed |
 | AI — Anthropic | `claude-sonnet-4-6`, `claude-opus-4-7` |
-| AI — OpenAI | `gpt-5`, `gpt-5-mini` |
+| AI — OpenAI | `gpt-5.4-mini`, `gpt-5.4`, `gpt-5.5` |
 | Storage | Local JSON files in `data/` (gitignored) |
 | Export | `docx` library + Puppeteer (PDF) + JSZip (custom styles) |
 | Scraping | cheerio (ATS-aware: Greenhouse, Lever, Ashby, Workable, Stripe) |
