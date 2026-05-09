@@ -43,3 +43,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ai scratch (handoff history in .ai/handoffs/ stays committed)
+.ai/scratch/
+!.ai/scratch/.gitkeep
